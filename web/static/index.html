@@ -8,8 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  /* Light is the default; `?theme=dark` sets data-theme on <html>, the same
-     way the host app's frame parameters work for the other sibling. */
+  /* Light is the fallback. Which one is used is decided in script, from the
+     browser's prefers-color-scheme rather than from the host — see the
+     comment on `systemDark` for why being told is not good enough. */
   :root {
     --bg: #F8FAFC; --card: #FFFFFF; --text: #0F172A; --muted: #64748B;
     --border: #E2E8F0; --accent: #1D4ED8; --accent-text: #FFFFFF;
@@ -122,7 +123,7 @@ const STRINGS = {
     mode_deep: "แบ่งเป็นหัวข้อย่อย — ละเอียดกว่า",
     rounds: "จำนวนรอบทบทวน",
     start: "เริ่มค้นคว้า",
-    hint: "ใช้เวลาประมาณ 1–5 นาที ขึ้นกับรูปแบบและจำนวนรอบ",
+    hint: "แต่ละรอบใช้เวลาหลายนาที และขึ้นกับโมเดลเป็นหลัก — วัดได้ 45 วินาที ถึง 10 นาทีต่อหนึ่งรายงาน เวลาจะไม่ถูกตัดกลางรอบ",
     running: "กำลังค้นคว้า…",
     done: "เสร็จแล้ว",
     failed: "ไม่สำเร็จ",
@@ -138,7 +139,7 @@ const STRINGS = {
     mode_deep: "Split into sections — more thorough",
     rounds: "Review rounds",
     start: "Start research",
-    hint: "Takes roughly 1–5 minutes, depending on mode and rounds.",
+    hint: "Minutes per round, and the model decides how many — measured between 45 seconds and 10 minutes for one report. A round in progress is never cut short.",
     running: "Researching…",
     done: "Finished",
     failed: "Failed",
@@ -150,7 +151,21 @@ const STRINGS = {
 const params = new URLSearchParams(location.search);
 const embedded = params.get("embed") === "1";
 let lang = params.get("lang") === "en" ? "en" : "th";
-let theme = params.get("theme") === "dark" ? "dark" : "light";
+
+// Theme is read from the browser, not from the host, and kept in step with
+// it. A host that frames this cannot reliably tell us: Streamlit's own
+// st.context.theme documents that its value "may be incorrect during a
+// change in theme", which is the one moment it would matter — so a frame
+// told the theme sat dark inside a light page until something else caused a
+// reload. The browser inside the frame knows, and says so immediately.
+//
+// ?theme= still pins it, for a host that wants the frame to disagree with
+// the system on purpose.
+const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+const pinned = params.get("theme");
+let theme = pinned === "dark" || pinned === "light"
+  ? pinned
+  : (systemDark.matches ? "dark" : "light");
 
 // Embedded, the host app already offers language and theme; a second pair
 // under its own is how a frame announces itself as a separate application.
@@ -170,6 +185,15 @@ function applyLang() {
 }
 applyTheme();
 applyLang();
+
+// Follow the system while the page is open, so switching the OS or browser
+// theme changes this frame at the same moment it changes the page around it.
+if (!pinned) {
+  systemDark.addEventListener("change", (event) => {
+    theme = event.matches ? "dark" : "light";
+    applyTheme();
+  });
+}
 document.getElementById("theme").onchange = (e) => { theme = e.target.value; applyTheme(); };
 document.getElementById("lang").onchange = (e) => { lang = e.target.value; applyLang(); };
 
