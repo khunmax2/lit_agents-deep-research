@@ -218,7 +218,11 @@ go.onclick = async () => {
 
   let started;
   try {
-    const response = await fetch("/api/runs", {
+    // Relative, not rooted: behind a reverse proxy this page is served
+    // from a path like /agents/, and "/api/runs" would ask the proxy's
+    // root instead of this application. The proxy strips the prefix, so
+    // "api/runs" from /agents/ arrives here as /api/runs.
+    const response = await fetch("api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -240,7 +244,7 @@ go.onclick = async () => {
   // Polling rather than a socket: a run is minutes long and the payload is
   // small, so the simplest thing that survives a proxy is the right one.
   const poll = setInterval(async () => {
-    const run = await (await fetch(`/api/runs/${started}`)).json();
+    const run = await (await fetch(`api/runs/${started}`)).json();
     log.textContent = run.progress.join("\n");
     log.scrollTop = log.scrollHeight;
     elapsed.textContent = STRINGS[lang].seconds(run.seconds);
