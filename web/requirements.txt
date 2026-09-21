@@ -1,0 +1,4 @@
+# On top of the library's own requirements.txt. Kept separate so a merge
+# from upstream cannot collide with it.
+fastapi
+uvicorn[standard]

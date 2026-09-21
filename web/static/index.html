@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep Research</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Light is the default; `?theme=dark` sets data-theme on <html>, the same
+     way the host app's frame parameters work for the other sibling. */
+  :root {
+    --bg: #F8FAFC; --card: #FFFFFF; --text: #0F172A; --muted: #64748B;
+    --border: #E2E8F0; --accent: #1D4ED8; --accent-text: #FFFFFF;
+    --ok: #15803D; --bad: #B91C1C; --log-bg: #F1F5F9;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B1220; --card: #111A2B; --text: #E2E8F0; --muted: #94A3B8;
+    --border: #1E293B; --accent: #3B82F6; --accent-text: #0B1220;
+    --ok: #4ADE80; --bad: #F87171; --log-bg: #0F1826;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; background: var(--bg); color: var(--text);
+    font-family: "IBM Plex Sans Thai", system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: .95rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  }
+  label { display: block; font-size: .9rem; margin-bottom: 6px; font-weight: 500; }
+  input[type=text], select {
+    width: 100%; padding: 10px 12px; border-radius: 8px; font: inherit;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .row > div { flex: 1 1 160px; }
+  button {
+    margin-top: 16px; width: 100%; padding: 11px 16px; border: 0;
+    border-radius: 8px; background: var(--accent); color: var(--accent-text);
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .hint { color: var(--muted); font-size: .85rem; margin-top: 10px; }
+  #log {
+    background: var(--log-bg); border-radius: 8px; padding: 12px;
+    max-height: 220px; overflow-y: auto; font-size: .82rem;
+    white-space: pre-wrap; word-break: break-word; margin: 0;
+  }
+  .state { font-weight: 600; }
+  .state.done { color: var(--ok); }
+  .state.failed { color: var(--bad); }
+  #report { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px; }
+  #report h1, #report h2, #report h3 { line-height: 1.35; }
+  #report pre { background: var(--log-bg); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  #report a { color: var(--accent); }
+  .controls { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 12px; }
+  .controls select { width: auto; padding: 6px 10px; font-size: .85rem; }
+  /* Last, and deliberately so: .hidden and the rules it has to beat are all
+     single class selectors, so source order decides. Declared earlier it
+     lost to .controls{display:flex} and `embed=1` left the language and
+     theme pickers on screen — the exact thing the flag exists to remove. */
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="controls" id="controls">
+    <select id="lang"><option value="th">ไทย</option><option value="en">English</option></select>
+    <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select>
+  </div>
+
+  <h1 data-t="title"></h1>
+  <p class="sub" data-t="sub"></p>
+
+  <div class="card">
+    <label for="q" data-t="topic"></label>
+    <input id="q" type="text" autocomplete="off">
+    <div class="row">
+      <div>
+        <label for="mode" data-t="mode"></label>
+        <select id="mode">
+          <option value="simple" data-t="mode_simple"></option>
+          <option value="deep" data-t="mode_deep"></option>
+        </select>
+      </div>
+      <div>
+        <label for="iterations" data-t="rounds"></label>
+        <select id="iterations">
+          <option value="1">1</option><option value="2" selected>2</option>
+          <option value="3">3</option><option value="5">5</option>
+        </select>
+      </div>
+    </div>
+    <button id="go" data-t="start"></button>
+    <p class="hint" data-t="hint"></p>
+  </div>
+
+  <div class="card hidden" id="progress">
+    <p><span class="state" id="state"></span> <span class="hint" id="elapsed"></span></p>
+    <pre id="log"></pre>
+    <div id="report" class="hidden"></div>
+  </div>
+</main>
+
+<script type="module">
+// Marked, for rendering the report the library returns as Markdown.
+import { marked } from "https://cdn.jsdelivr.net/npm/marked@12/lib/marked.esm.js";
+
+const STRINGS = {
+  th: {
+    title: "ค้นคว้าเชิงลึก",
+    sub: "ระบบจะวางแผน ค้นหา และเขียนรายงานพร้อมแหล่งอ้างอิงให้อัตโนมัติ",
+    topic: "หัวข้อที่ต้องการค้นคว้า",
+    mode: "รูปแบบ",
+    mode_simple: "รอบเดียว — เร็วกว่า",
+    mode_deep: "แบ่งเป็นหัวข้อย่อย — ละเอียดกว่า",
+    rounds: "จำนวนรอบทบทวน",
+    start: "เริ่มค้นคว้า",
+    hint: "ใช้เวลาประมาณ 1–5 นาที ขึ้นกับรูปแบบและจำนวนรอบ",
+    running: "กำลังค้นคว้า…",
+    done: "เสร็จแล้ว",
+    failed: "ไม่สำเร็จ",
+    seconds: (s) => `${s} วินาที`,
+    empty: "กรุณาใส่หัวข้อ",
+  },
+  en: {
+    title: "Deep Research",
+    sub: "Plans the work, searches, and writes a sourced report on its own.",
+    topic: "What would you like researched?",
+    mode: "Mode",
+    mode_simple: "One pass — faster",
+    mode_deep: "Split into sections — more thorough",
+    rounds: "Review rounds",
+    start: "Start research",
+    hint: "Takes roughly 1–5 minutes, depending on mode and rounds.",
+    running: "Researching…",
+    done: "Finished",
+    failed: "Failed",
+    seconds: (s) => `${s}s`,
+    empty: "Please enter a topic.",
+  },
+};
+
+const params = new URLSearchParams(location.search);
+const embedded = params.get("embed") === "1";
+let lang = params.get("lang") === "en" ? "en" : "th";
+let theme = params.get("theme") === "dark" ? "dark" : "light";
+
+// Embedded, the host app already offers language and theme; a second pair
+// under its own is how a frame announces itself as a separate application.
+if (embedded) document.getElementById("controls").classList.add("hidden");
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById("theme").value = theme;
+}
+function applyLang() {
+  const s = STRINGS[lang];
+  document.documentElement.lang = lang;
+  document.getElementById("lang").value = lang;
+  for (const node of document.querySelectorAll("[data-t]")) {
+    node.textContent = s[node.dataset.t];
+  }
+}
+applyTheme();
+applyLang();
+document.getElementById("theme").onchange = (e) => { theme = e.target.value; applyTheme(); };
+document.getElementById("lang").onchange = (e) => { lang = e.target.value; applyLang(); };
+
+const go = document.getElementById("go");
+const panel = document.getElementById("progress");
+const state = document.getElementById("state");
+const elapsed = document.getElementById("elapsed");
+const log = document.getElementById("log");
+const report = document.getElementById("report");
+
+go.onclick = async () => {
+  const query = document.getElementById("q").value.trim();
+  if (query.length < 3) { alert(STRINGS[lang].empty); return; }
+
+  go.disabled = true;
+  panel.classList.remove("hidden");
+  report.classList.add("hidden");
+  report.innerHTML = "";
+  log.textContent = "";
+  state.className = "state";
+  state.textContent = STRINGS[lang].running;
+
+  let started;
+  try {
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query,
+        mode: document.getElementById("mode").value,
+        iterations: Number(document.getElementById("iterations").value),
+      }),
+    });
+    if (!response.ok) throw new Error((await response.json()).detail || response.statusText);
+    started = (await response.json()).id;
+  } catch (error) {
+    state.className = "state failed";
+    state.textContent = STRINGS[lang].failed;
+    log.textContent = String(error.message || error);
+    go.disabled = false;
+    return;
+  }
+
+  // Polling rather than a socket: a run is minutes long and the payload is
+  // small, so the simplest thing that survives a proxy is the right one.
+  const poll = setInterval(async () => {
+    const run = await (await fetch(`/api/runs/${started}`)).json();
+    log.textContent = run.progress.join("\n");
+    log.scrollTop = log.scrollHeight;
+    elapsed.textContent = STRINGS[lang].seconds(run.seconds);
+    if (run.status === "running") return;
+
+    clearInterval(poll);
+    go.disabled = false;
+    if (run.status === "done") {
+      state.className = "state done";
+      state.textContent = STRINGS[lang].done;
+      report.innerHTML = marked.parse(run.report || "");
+      report.classList.remove("hidden");
+    } else {
+      state.className = "state failed";
+      state.textContent = STRINGS[lang].failed;
+      log.textContent += `\n\n${run.error}`;
+    }
+  }, 2000);
+};
+</script>
+</body>
+</html>
