@@ -172,7 +172,17 @@ def model_supports_structured_output(
     model: Union[OpenAIChatCompletionsModel, OpenAIResponsesModel],
 ) -> bool:
     """Utility function to check if a model supports structured output"""
-    structured_output_providers = ["openai.com", "anthropic.com"]
+    # openrouter.ai added for lit-storm. OpenRouter passes response_format
+    # through to models that support it, so its models can use the native
+    # path like any other.
+    #
+    # Without it they fall to the text fallback, which puts the JSON schema
+    # in the prompt and then takes the first JSON object it finds in the
+    # reply. A model that restates the schema before answering — which both
+    # gpt-4o-mini and deepseek-v4.1-flash did here, every time — hands the
+    # parser the schema, and every run died on the first agent with
+    # "2 validation errors for KnowledgeGapOutput: field required".
+    structured_output_providers = ["openai.com", "anthropic.com", "openrouter.ai"]
     return any(
         provider in get_base_url(model) for provider in structured_output_providers
     )
