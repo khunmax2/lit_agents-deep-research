@@ -204,6 +204,45 @@ const elapsed = document.getElementById("elapsed");
 const log = document.getElementById("log");
 const report = document.getElementById("report");
 
+// Finished runs, kept in the browser.
+//
+// The server holds them too, but only in memory and only by id, so a reload
+// of this page loses a report that is still sitting upstairs. Keeping them
+// here gives the page a memory of its own — and, when it is framed by an
+// application on the same origin, gives that application something to read.
+// That is how a report reaches a library without this page having to know
+// that a library, or a reader, exists.
+//
+// The shape deliberately matches the other research UI's history, so one
+// reader on the other side can handle both without a special case.
+const HISTORY_KEY = "agents-research-history";
+const HISTORY_KEPT = 20;
+
+function remember(run) {
+  if (!run || !run.id || !(run.report || "").trim()) return;
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    const items = parsed && Array.isArray(parsed.items) ? parsed.items : [];
+    if (items.some((item) => item && item.id === run.id)) return;
+    items.push({
+      id: run.id,
+      title: run.query || "",
+      query: run.query || "",
+      report: run.report,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    localStorage.setItem(
+      HISTORY_KEY,
+      JSON.stringify({ items: items.slice(-HISTORY_KEPT) })
+    );
+  } catch (error) {
+    // Private browsing, a full quota, storage switched off. A report that
+    // cannot be remembered is still a report on the screen.
+  }
+}
+
 go.onclick = async () => {
   const query = document.getElementById("q").value.trim();
   if (query.length < 3) { alert(STRINGS[lang].empty); return; }
@@ -257,6 +296,7 @@ go.onclick = async () => {
       state.textContent = STRINGS[lang].done;
       report.innerHTML = marked.parse(run.report || "");
       report.classList.remove("hidden");
+      remember(run);
     } else {
       state.className = "state failed";
       state.textContent = STRINGS[lang].failed;
