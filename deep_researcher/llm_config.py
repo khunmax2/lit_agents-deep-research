@@ -111,7 +111,7 @@ else:
     # If no OpenAI API key is provided, disable tracing
     set_tracing_disabled(True)
 
-supported_search_providers = ["serper", "searchxng", "openai"]
+supported_search_providers = ["serper", "searchxng", "tavily", "openai"]
 
 
 class LLMConfig:

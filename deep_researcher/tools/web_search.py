@@ -16,6 +16,9 @@ from ..llm_config import LLMConfig, model_supports_structured_output
 
 load_dotenv()
 CONTENT_LENGTH_LIMIT = 10000  # Trim scraped content to this length to avoid large context / token limit issues
+# Added for lit-storm: without a limit, a search service or page that stops
+# answering holds the whole research run for aiohttp's five minutes.
+SEARCH_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # ------- DEFINE TYPES -------
 
@@ -47,6 +50,8 @@ def create_web_search_tool(config: LLMConfig) -> function_tool:
         search_client = SerperClient(filter_agent)
     elif config.search_provider == "searchxng":
         search_client = SearchXNGClient(filter_agent)
+    elif config.search_provider == "tavily":
+        search_client = TavilyClient(filter_agent)
     else:
         raise ValueError(f"Invalid search provider: {config.search_provider}")
 
@@ -202,6 +207,9 @@ class SearchXNGClient:
     def __init__(self, filter_agent: ResearchAgent):
         self.filter_agent = filter_agent
         self.host = os.getenv("SEARCHXNG_HOST")
+        # Added for lit-storm: one instance serves a general and an academic
+        # source by naming its engines, e.g. "arxiv,pubmed".
+        self.engines = os.getenv("SEARCHXNG_ENGINES") or None
         if not self.host.endswith("/search"):
             self.host = (
                 f"{self.host}/search"
@@ -219,8 +227,10 @@ class SearchXNGClient:
                 "q": query,
                 "format": "json",
             }
+            if self.engines:
+                params["engines"] = self.engines
 
-            async with session.get(self.host, params=params) as response:
+            async with session.get(self.host, params=params, timeout=SEARCH_TIMEOUT) as response:
                 response.raise_for_status()
                 results = await response.json()
 
@@ -267,6 +277,48 @@ class SearchXNGClient:
             return results[:max_results]
 
 
+class TavilyClient:
+    """A client for Tavily's search API (added for lit-storm).
+
+    Asks Tavily for each result's page text as well, so the pages need not be
+    fetched again; scrape_urls still runs for results without it.
+    """
+
+    def __init__(self, filter_agent: ResearchAgent, api_key: str = None):
+        self.filter_agent = filter_agent
+        self.api_key = api_key or os.getenv("TAVILY_API_KEY")
+        if not self.api_key:
+            raise ValueError("No API key provided. Set TAVILY_API_KEY environment variable.")
+        self.url = "https://api.tavily.com/search"
+
+    async def search(
+        self, query: str, filter_for_relevance: bool = True, max_results: int = 5
+    ) -> List[WebpageSnippet]:
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            async with session.post(
+                self.url,
+                json={"api_key": self.api_key, "query": query, "max_results": max(max_results, 5)},
+                timeout=SEARCH_TIMEOUT,
+            ) as response:
+                response.raise_for_status()
+                results = await response.json()
+        results_list = [
+            WebpageSnippet(
+                url=result.get("url", ""),
+                title=result.get("title", ""),
+                description=result.get("content", ""),
+            )
+            for result in results.get("results", [])
+        ]
+        if not results_list or not filter_for_relevance:
+            return results_list[:max_results]
+        return await self._filter_results(results_list, query, max_results=max_results)
+
+    # The same relevance filter as SearXNG's results get.
+    _filter_results = SearchXNGClient._filter_results
+
+
 async def scrape_urls(items: List[WebpageSnippet]) -> List[ScrapeResult]:
     """Fetch text content from provided URLs.
 
@@ -309,7 +361,7 @@ async def fetch_and_process_url(
         )
 
     try:
-        async with session.get(item.url, timeout=8) as response:
+        async with session.get(item.url, timeout=aiohttp.ClientTimeout(total=8)) as response:
             if response.status == 200:
                 content = await response.text()
                 # Run html_to_text in a thread pool to avoid blocking

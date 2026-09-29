@@ -1,9 +1,7 @@
 openai
 python-dotenv
 aiohttp
-asyncio
 beautifulsoup4
 lxml
 pydantic
 openai-agents
-md2pdf

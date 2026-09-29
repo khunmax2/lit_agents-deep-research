@@ -36,7 +36,10 @@ setup(
         'dev': [
             'pytest',
             'pytest-asyncio'
-        ]
+        ],
+        # Only deep_researcher.utils.md_to_pdf uses it; it brings WeasyPrint
+        # and its system libraries, which lit-storm's Worker does not need.
+        'pdf': ['md2pdf'],
     },
     entry_points={
         'console_scripts': [
